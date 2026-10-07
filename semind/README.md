@@ -68,12 +68,25 @@ checkout with its package lock. Never point dev at production databases.
   LCP 4,532.586 ms; it remains historical evidence, not an open gate. Report:
   `D:/semind-librechat/logs/lighthouse-refresh-fixed.log`.
 
+The historical base archive and local-production increment passed independent
+full member/hash/size, SQLite integrity, count and expanded known-credential
+audits. The base contains 6,435 files from 85 sources and 9,460 stored rows; the
+increment contains 3,204 files from 55 sources and 4,772 rows. Repeated snapshots
+are replacements, so these counts must not be summed as unique messages.
+Evidence and exact archive hashes are recorded in
+`D:/semind-librechat/README-assistant-history-archive.md`. Superseded intermediate
+copies are kept in a restricted private quarantine. Local old-production intake
+is stopped and its scoped drain is complete; dev and live game-plugin queues
+still require a final drain before cutover.
+
 ## Remaining acceptance gates
 
 - Complete a real browser Steam login/logout/revocation check through HTTPS and
   verify the same player account in web and game. Component fixtures do not
   replace this check.
-- Finish the archive coverage/hash/redaction audit and record its final report.
+- Verify external attachment ownership and complete the remaining dev/game
+  drains before cutover. Preserve source history and volumes until rollback is
+  verified; the audited local-production archive is not a full migration drain.
 - Exercise live scheduled results, world-change pausing and cancellation/ACK
   behavior after the staged plugin is installed through an authorized game
   maintenance step.
