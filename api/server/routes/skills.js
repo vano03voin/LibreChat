@@ -4,6 +4,7 @@ const express = require('express');
 const {
   createImportHandler,
   createSkillUploadHandler,
+  createSemindResourceOwnerPolicy,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -34,6 +35,13 @@ const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
 const router = express.Router();
+router.param(
+  'id',
+  createSemindResourceOwnerPolicy({
+    resourceIdParam: 'id',
+    getResourceOwner: async (id) => (await getSkillById(id))?.author?.toString() ?? null,
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // Multer: memory storage for skill imports (zip processed in-memory)

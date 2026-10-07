@@ -83,6 +83,7 @@ export async function auditPage({
     for (let run = 1; run <= runs; run++) {
       const output = path.join(directory, `lhr-${run}`);
       for (let attempt = 1; ; attempt++) {
+        const startedAt = Date.now();
         try {
           const { stdout } = await exec(process.execPath, [
             cli,
@@ -95,8 +96,28 @@ export async function auditPage({
           }
           break;
         } catch (error) {
+          const stderr = (error as { stderr?: string }).stderr ?? '';
+          // Windows may retain a Chrome profile handle after the completed audit.
+          // Accept only fresh, complete reports; all URL, transcript and budget
+          // assertions below still apply. Never expose execFile's command because
+          // it contains the temporary session cookie.
+          const reportPath = `${output}.report.json`;
+          if (
+            process.platform === 'win32' &&
+            /EPERM, Permission denied:.*lighthouse\./.test(stderr) &&
+            fs.existsSync(reportPath) &&
+            fs.existsSync(`${output}.report.html`) &&
+            fs.statSync(reportPath).mtimeMs >= startedAt
+          ) {
+            const completed = JSON.parse(fs.readFileSync(reportPath, 'utf8')) as Result;
+            if (!completed.runtimeError && completed.requestedUrl === url) {
+              console.log(`Lighthouse run ${run}/${runs} completed; Windows profile cleanup deferred.`);
+              break;
+            }
+          }
+          const failure = stderr.includes('EPERM') ? 'profile_cleanup_failed' : 'runner_failed';
           if (attempt >= RUN_ATTEMPTS) {
-            throw error;
+            throw new Error(`Lighthouse run ${run}/${runs} could not complete: ${failure}`);
           }
           /** Lighthouse crashes out of a run it could not trace — NO_NAVSTART is
            *  the usual one, and its own message is "run Lighthouse again". The
@@ -105,7 +126,7 @@ export async function auditPage({
            *  broken fails every attempt and still fails here. */
           console.log(
             `Lighthouse run ${run}/${runs} attempt ${attempt} did not complete, retrying: ${
-              error instanceof Error ? error.message.split('\n')[0] : String(error)
+              failure
             }`,
           );
         }

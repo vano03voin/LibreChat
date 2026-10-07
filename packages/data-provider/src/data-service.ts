@@ -672,6 +672,15 @@ export const createAgent = ({ ...data }: ag.AgentCreateParams): Promise<ag.Agent
   return request.post(endpoints.agents({}), data);
 };
 
+export interface SemindGameAgentSelection {
+  enabled: boolean;
+  agentId: string | null;
+}
+export const getSemindGameAgent = (): Promise<SemindGameAgentSelection> =>
+  request.get(endpoints.semindGameAgent());
+export const setSemindGameAgent = (agentId: string | null): Promise<SemindGameAgentSelection> =>
+  request.put(endpoints.semindGameAgent(), { agentId });
+
 export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<ag.Agent> => {
   return request.get(
     endpoints.agents({

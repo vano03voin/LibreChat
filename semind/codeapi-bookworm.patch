@@ -1,0 +1,124 @@
+diff --git a/api/Dockerfile b/api/Dockerfile
+index d630c54..3de8b2e 100644
+--- a/api/Dockerfile
++++ b/api/Dockerfile
+@@ -35,7 +35,7 @@ COPY api/src/spec-guard.c /tmp/spec-guard.c
+ COPY api/src/tool-call-pipe-bridge.c /tmp/tool-call-pipe-bridge.c
+ COPY api/src/anonymous-pipes.c /tmp/anonymous-pipes.c
+ COPY api/src/supervisor-policy.c /tmp/supervisor-policy.c
+-COPY --from=node:22-slim /usr/local/include/node /usr/local/include/node
++COPY --from=node:22-bookworm-slim /usr/local/include/node /usr/local/include/node
+ COPY docker/rootfs-setup.c /tmp/rootfs-setup.c
+ RUN gcc -shared -fPIC -O2 -Wall -Wextra -Werror -I/usr/local/include/node -o /usr/local/lib/anonymous-pipes.node /tmp/anonymous-pipes.c \
+     && gcc -O2 -static -Wall -Wextra -Werror -o /usr/local/bin/sandbox-supervisor-policy /tmp/supervisor-policy.c \
+@@ -49,7 +49,7 @@ FROM nsjail-builder AS nsjail-ipc-test
+ ENV SANDBOX_PIPE_ADDON=/usr/local/lib/anonymous-pipes.node
+ COPY docker/python-runtime /python-runtime
+ RUN python3 /python-runtime/install.py
+-COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
++COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+ COPY --from=oven/bun:1.4.2-debian /usr/local/bin/bun /usr/local/bin/bun
+ 
+ # ============================================================================
+@@ -87,7 +87,8 @@ RUN chmod +x /package-init.sh && FORCE_REBUILD=true /package-init.sh
+ # ============================================================================
+ # Stage 2: Build sandbox rootfs
+ # ============================================================================
+-FROM oven/bun:1.4.2-debian AS sandbox-build
++FROM node:22-bookworm-slim AS sandbox-build
++COPY --from=oven/bun:1.4.2-debian /usr/local/bin/bun /usr/local/bin/bun
+ 
+ ENV DEBIAN_FRONTEND=noninteractive
+ 
+@@ -138,7 +139,7 @@ RUN chmod +x /usr/sbin/nsjail
+ # The per-invocation broker starts Node after restore, so its OpenSSL process
+ # state is not captured in the MicroVM snapshot. Pulling the Node binary
+ # is ~30 MB and avoids inheriting npm/node_modules from a full apt install.
+-COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
++COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+ 
+ WORKDIR /sandbox_api
+ 
+diff --git a/service/src/api-server.ts b/service/src/api-server.ts
+index fc93aeb..eeeed6e 100644
+--- a/service/src/api-server.ts
++++ b/service/src/api-server.ts
+@@ -30,6 +30,7 @@ import { env } from './config';
+ import logger from './logger';
+ import hostedAppRouter from './hosted-app/router';
+ import { hostedAppPreviewGateway } from './hosted-app/preview-gateway';
++import { semindPolicy } from './semind-policy';
+ 
+ const { LOCAL_MODE: isLocalMode } = env;
+ 
+@@ -58,6 +59,7 @@ app.get('/v1/health', async (_, res) => {
+   }
+ });
+ 
++v1.use(semindPolicy);
+ v1.use('/bridge', bridgeRouter);
+ v1.use(isLocalMode ? localAuth : apiKeyAuth);
+ 
+diff --git a/service/src/semind-policy.test.ts b/service/src/semind-policy.test.ts
+new file mode 100644
+index 0000000..4916495
+--- /dev/null
++++ b/service/src/semind-policy.test.ts
+@@ -0,0 +1,32 @@
++import { describe, expect, test } from 'bun:test';
++import { semindPolicy } from './semind-policy';
++import type { Request, Response } from 'express';
++
++function check(method: string, path: string, body = {}) {
++  let allowed = false;
++  let status = 0;
++  let error = '';
++  const res = { status(code: number) { status = code; return this; }, json(value: { error: string }) { error = value.error; } };
++  semindPolicy({ method, path, body } as Request, res as Response, () => { allowed = true; });
++  return { allowed, status, error };
++}
++
++describe('SE-mind Code API admission', () => {
++  test('only stateless Python and file reads/uploads are admitted', () => {
++    process.env.CODEAPI_SEMIND_PROFILE = 'true';
++    expect(check('POST', '/exec', { lang: 'python', code: 'print(1)' }).allowed).toBe(true);
++    expect(check('POST', '/upload').allowed).toBe(true);
++    expect(check('GET', '/download/abc/def').allowed).toBe(true);
++    for (const lang of ['bash', 'javascript', 'sh', '', null]) {
++      expect(check('POST', '/exec', { lang }).status).toBe(403);
++    }
++    for (const body of [{ lang: 'python', tools: [] }, { lang: 'python', runtime_session_hint: 'other' }]) {
++      expect(check('POST', '/exec', body).status).toBe(403);
++    }
++    for (const path of ['/bridge/enroll', '/workspace-tools/execute', '/exec/stream']) {
++      expect(check('POST', path).status).toBe(403);
++    }
++    expect(check('DELETE', '/files/abc/def').status).toBe(403);
++    delete process.env.CODEAPI_SEMIND_PROFILE;
++  });
++});
+diff --git a/service/src/semind-policy.ts b/service/src/semind-policy.ts
+new file mode 100644
+index 0000000..38ecaa7
+--- /dev/null
++++ b/service/src/semind-policy.ts
+@@ -0,0 +1,19 @@
++import type { RequestHandler } from 'express';
++
++/** Platform policy for the SE-mind stateless Python deployment. */
++export const semindPolicy: RequestHandler = (req, res, next) => {
++  if (process.env.CODEAPI_SEMIND_PROFILE !== 'true') return next();
++  if (req.method === 'POST' && req.path === '/exec') {
++    if (req.body?.lang !== 'python' || req.body?.runtime_session_hint != null ||
++        req.body?.tools != null || req.body?.runtime_session_id != null) {
++      res.status(403).json({ error: 'semind_stateless_python_required' });
++      return;
++    }
++    return next();
++  }
++  if (req.method === 'POST' && ['/upload', '/upload/batch'].includes(req.path)) return next();
++  if (req.method === 'GET' && /^\/(download|files|sessions)\//.test(req.path)) return next();
++  // Programmatic tools, bridge enrollment, workspaces and destructive file deletion
++  // have no public surface in this deployment, even with an otherwise valid JWT.
++  res.status(403).json({ error: 'semind_code_operation_disabled' });
++};

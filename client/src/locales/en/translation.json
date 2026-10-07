@@ -1,4 +1,11 @@
 {
+  "com_auth_login_via_semind": "Sign in through SE-mind",
+  "com_agents_use_in_game": "Use in game",
+  "com_ui_schedule_disabled_world_changed": "The game world changed. Edit the task to authorize it for the current world.",
+  "com_agents_selected_for_game": "Selected for game",
+  "com_agents_use_default_in_game": "Use the default game assistant",
+  "com_agents_game_selection_hint": "Applies to new game chats. Your current game chat keeps its agent.",
+  "com_agents_game_selection_failed": "Could not select this agent. Choose one of your own agents and try again.",
   "com_ui_background_tasks": "Background tasks",
   "com_ui_background_tasks_cancel_disabled": "Stopping background tools is not enabled on this server",
   "com_ui_background_tasks_checked": "Checked background tasks",
@@ -3057,5 +3064,9 @@
   "com_insights_invalid_date_range": "Choose an end date after the start date, within {{days}} days.",
   "com_insights_sparkline_accessibility": "{{label}} over time",
   "com_nav_mobile_drawer_strip": "Show chat beside the sidebar on mobile",
-  "com_nav_mobile_drawer_strip_info": "The sidebar stops short of the edge so a strip of the conversation stays visible. Tapping it closes the sidebar."
+  "com_nav_mobile_drawer_strip_info": "The sidebar stops short of the edge so a strip of the conversation stays visible. Tapping it closes the sidebar.",
+  "com_ui_schedule_execution_scope": "Task access",
+  "com_ui_schedule_scope_profile": "Personal profile",
+  "com_ui_schedule_scope_game": "Current game world",
+  "com_ui_schedule_scope_hint": "Game tasks use your current rights, can run while you are offline, and pause when the world changes. Results appear in private website chats."
 }

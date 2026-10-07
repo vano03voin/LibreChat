@@ -21,6 +21,7 @@ import type t from 'librechat-data-provider';
 import { renderAgentAvatar, clearMessagesCache, specDisplayFieldReset } from '~/utils';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
 import Description from '~/components/ui/Description';
+import GameAgentSelection from './GameAgentSelection';
 import { useChatContext } from '~/Providers';
 import AgentContact from './AgentContact';
 
@@ -164,6 +165,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
           {localize('com_agents_start_chat')}
         </Button>
       </div>
+      <GameAgentSelection agentId={agent.id} />
     </OGDialogContent>
   );
 };

@@ -61,6 +61,7 @@ export interface ScheduleUserContext {
   id: string;
   tenantId?: string;
   role?: string;
+  semindSteamId?: string;
 }
 
 /**
@@ -180,6 +181,10 @@ export interface ScheduleFileRef {
 }
 
 export interface ScheduleEngineDeps {
+  validateSemindGame?: (
+    schedule: FireableSchedule,
+    user: ScheduleUserContext,
+  ) => Promise<'ok' | 'world_changed' | 'permission_revoked'>;
   preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods;
   /** Resolves interface.schedules limits, per-principal when a user is given. */
@@ -319,6 +324,7 @@ export interface FireResult {
     | 'permission_revoked'
     | 'project_deleted'
     | 'project_required'
+    | 'world_changed'
     | 'rate_limited'
     | 'disabled';
   error?: string;

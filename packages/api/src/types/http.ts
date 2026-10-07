@@ -7,6 +7,7 @@ import type {
 } from 'librechat-data-provider';
 import type { IUser, AppConfig, IConversation } from '@librechat/data-schemas';
 import type { Request } from 'express';
+import type { SemindIdentity } from '~/semind/memory';
 
 /**
  * LibreChat-specific request body type that extends Express Request body
@@ -42,4 +43,9 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   resolvedConversation?: Partial<IConversation> | null;
   /** Passport strategy that populated req.user for this request. */
   authStrategy?: string;
+  /** Set only by the SE-mind authority or trusted game adapter. */
+  semindIdentity?: SemindIdentity;
+  semindUserText?: string;
+  /** Ephemeral per-execution authority, never persisted in chat or trigger metadata. */
+  semindDataGrant?: { access_token: string; expires_at: string; api_prefix: '/api/player/v1' };
 };

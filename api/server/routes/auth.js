@@ -1,4 +1,6 @@
 const express = require('express');
+const semindAuthority = require('~/server/services/semind');
+const { getUserById: getSemindRefreshUser } = require('~/models');
 const {
   limiterCache,
   createSetBalanceConfig,
@@ -48,7 +50,7 @@ const getCloudFrontAuthCookieRefreshResult = (req, res) => {
 
 const ldapAuth = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
 //Local
-router.post('/logout', middleware.requireJwtAuth, logoutController);
+router.post('/logout', middleware.requireJwtAuth, semindAuthority.revokeSession, logoutController);
 router.post(
   '/login',
   middleware.logHeaders,
@@ -60,7 +62,14 @@ router.post(
   setBalanceConfig,
   loginController,
 );
-router.post('/refresh', refreshController);
+router.post(
+  '/refresh',
+  semindAuthority.createRefreshGuard({
+    refreshSecret: process.env.JWT_REFRESH_SECRET,
+    getUser: getSemindRefreshUser,
+  }),
+  refreshController,
+);
 router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
   const result = getCloudFrontAuthCookieRefreshResult(req, res);
   if (!result.enabled) {

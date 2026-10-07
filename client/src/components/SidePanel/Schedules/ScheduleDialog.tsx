@@ -3,6 +3,7 @@ import { v4 } from 'uuid';
 import { Folder } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import {
   Input,
@@ -26,6 +27,8 @@ import {
   isValidCronExpression,
   cadenceIntervalMinutes,
   SCHEDULE_CRON_MAX_LENGTH,
+  dataService,
+  QueryKeys,
 } from 'librechat-data-provider';
 import type {
   TSchedule,
@@ -69,6 +72,7 @@ type ScheduleFormValues = {
   name: string;
   prompt: string;
   agent_id: string;
+  executionScope: 'profile' | 'game';
   /** `''` means unscoped; the picker has no null option of its own. */
   chatProjectId: string;
   frequency: ScheduleFrequency;
@@ -111,6 +115,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       name: '',
       prompt: '',
       agent_id: '',
+      executionScope: 'profile',
       chatProjectId: '',
       frequency: 'daily',
       hour: 9,
@@ -124,6 +129,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
     name: schedule.name,
     prompt: schedule.prompt,
     agent_id: schedule.agent_id,
+    executionScope: schedule.executionScope ?? 'profile',
     chatProjectId: schedule.chatProjectId ?? '',
     // A stored row always has one; the fallback only covers a legacy row written
     // before the field existed, which would otherwise render an empty picker.
@@ -190,6 +196,11 @@ export default function ScheduleDialog({
   const localize = useLocalize();
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
+  const { data: semindSelection } = useQuery(
+    [QueryKeys.semindGameAgent],
+    dataService.getSemindGameAgent,
+    { retry: false },
+  );
   const locale = i18n.language;
   const [mcpRecoveryOutcomes, setMCPRecoveryOutcomes] = useState<
     ReturnType<typeof scheduleMCPErrorOutcomes>
@@ -394,6 +405,7 @@ export default function ScheduleDialog({
         ...(dirtyFields.name ? { name: values.name.trim() } : {}),
         ...(dirtyFields.prompt ? { prompt: values.prompt.trim() } : {}),
         ...(dirtyFields.agent_id ? { agent_id: values.agent_id } : {}),
+        ...(dirtyFields.executionScope ? { executionScope: values.executionScope } : {}),
         // Explicit `null` is the only way to CLEAR the scope; omitting the field
         // leaves the stored project alone. Never sent while pinned — the server owns
         // the destination there, and echoing it back would only be a chance to
@@ -429,6 +441,7 @@ export default function ScheduleDialog({
       name: values.name.trim(),
       prompt: values.prompt.trim(),
       agent_id: values.agent_id,
+      ...(semindSelection?.enabled && { executionScope: values.executionScope }),
       ...(pinnedProjectId == null && values.chatProjectId
         ? { chatProjectId: values.chatProjectId }
         : {}),
@@ -655,6 +668,24 @@ export default function ScheduleDialog({
                   />
                   <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
                 </div>
+                {semindSelection?.enabled && (
+                  <div className="space-y-2">
+                    <Label htmlFor="schedule-execution-scope">
+                      {localize('com_ui_schedule_execution_scope')}
+                    </Label>
+                    <select
+                      id="schedule-execution-scope"
+                      className="w-full rounded-xl border border-border-light bg-surface-secondary p-2"
+                      {...register('executionScope')}
+                    >
+                      <option value="profile">{localize('com_ui_schedule_scope_profile')}</option>
+                      <option value="game">{localize('com_ui_schedule_scope_game')}</option>
+                    </select>
+                    <p className="text-sm text-text-secondary">
+                      {localize('com_ui_schedule_scope_hint')}
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label
                     htmlFor="schedule-project"

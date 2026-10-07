@@ -2,6 +2,7 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
 const {
   checkAccess,
+  createSemindScheduleTool,
   toolkitParent,
   toolRolePermissions,
   checkToolRolePermission,
@@ -71,6 +72,8 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools, checkCapability } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
 const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
+const createSemindScheduleActions = require('~/server/services/semindSchedules');
+const createSemindPlatformTools = require('~/server/services/semindPlatform');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -223,6 +226,12 @@ const loadTools = async ({
   };
 
   const customConstructors = {
+    game_execute: async () =>
+      createSemindPlatformTools(options.req, signal).find((tool) => tool.name === 'game_execute'),
+    script_library: async () =>
+      createSemindPlatformTools(options.req, signal).find((tool) => tool.name === 'script_library'),
+    semind_schedule: async () =>
+      createSemindScheduleTool({ execute: createSemindScheduleActions(options.req, agent?.id) }),
     image_gen_oai: async (_toolContextMap, dynamicToolContextMap) => {
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });

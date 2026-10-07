@@ -1,0 +1,68 @@
+name: semind-librechat-dev
+services:
+  chat:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        BUILD_COMMIT: e8f3be08623663d4ad7f7241e693c94469b63bb0
+        BUILD_BRANCH: codex/semind-integration
+    image: semind-librechat:dev
+    ports:
+      - 127.0.0.1:49390:3080
+    env_file: dev.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3080
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      REDIS_URI: redis://redis:6379
+      USE_REDIS: 'true'
+      USE_REDIS_STREAMS: 'true'
+      ALLOW_REGISTRATION: 'false'
+      ALLOW_EMAIL_LOGIN: 'false'
+      ALLOW_SOCIAL_LOGIN: 'false'
+      ALLOW_PASSWORD_RESET: 'false'
+      SEARCH: 'false'
+      CONFIG_PATH: /app/librechat.yaml
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      - uploads:/app/uploads
+      - images:/app/client/public/images
+      - skills:/app/skill
+      - data:/app/data
+      - logs:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+  mongodb:
+    image: mongo:8.0.20
+    volumes:
+      - mongodb:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand({ping:1}).ok']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  redis:
+    image: redis:7.4.2-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+volumes:
+  mongodb:
+  redis:
+  uploads:
+  images:
+  skills:
+  data:
+  logs:

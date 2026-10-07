@@ -70,6 +70,7 @@ describe('toWireSchedule', () => {
         'createdAt',
         'disabledReason',
         'enabled',
+        'executionScope',
         'failureCount',
         'file_ids',
         'id',

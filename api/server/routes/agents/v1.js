@@ -1,14 +1,36 @@
 const express = require('express');
-const { generateCheckAccess } = require('@librechat/api');
+const {
+  generateCheckAccess,
+  createSemindAgentSelectionHandlers,
+  createSemindResourceOwnerPolicy,
+} = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const { configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
-const { getRoleByName } = require('~/models');
+const {
+  getRoleByName,
+  getSemindAgentSelection,
+  setSemindAgentSelection,
+  getAgent,
+} = require('~/models');
 const actions = require('./actions');
 const tools = require('./tools');
 
 const router = express.Router();
 const avatar = express.Router();
+const ownerPolicy = (resourceIdParam) =>
+  createSemindResourceOwnerPolicy({
+    resourceIdParam,
+    getResourceOwner: async (id) => (await getAgent({ id }))?.author?.toString() ?? null,
+  });
+router.param('id', ownerPolicy('id'));
+avatar.param('agent_id', ownerPolicy('agent_id'));
+const semindAgentSelection = createSemindAgentSelectionHandlers({
+  getSemindAgentSelection,
+  setSemindAgentSelection,
+});
+router.get('/semind/game-agent', configMiddleware, semindAgentSelection.get);
+router.put('/semind/game-agent', configMiddleware, semindAgentSelection.set);
 
 const checkAgentAccess = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,

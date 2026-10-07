@@ -11,7 +11,7 @@ function getService() {
     return service;
   }
   const mongoose = require('mongoose');
-  const { createSchedulesService } = require('@librechat/api');
+  const { createSchedulesService, createSemindScheduleValidator } = require('@librechat/api');
   const { getAppConfig } = require('~/server/services/Config/app');
   const {
     enqueueAgentTrigger,
@@ -22,11 +22,16 @@ function getService() {
   const isUserDeleting = async (userId) => !(await methods.isAgentTriggerPrincipalActive(userId));
 
   service = createSchedulesService({
+    validateSemindGame: createSemindScheduleValidator({
+      getConfig: async () => (await getAppConfig({ baseOnly: true })).config?.semind,
+      internalKey: process.env.SEMIND_INTERNAL_KEY,
+      fetch: global.fetch,
+    }),
     preflightMCP: require('./mcp'),
     methods,
     getAppConfig,
     findUserById: (userId) =>
-      mongoose.models.User.findById(userId).select('_id tenantId role').lean(),
+      mongoose.models.User.findById(userId).select('_id tenantId role semindSteamId').lean(),
     findBalance: (userId) => methods.findBalanceByUser(userId, { includeReservedCredits: true }),
     upsertBalance: (userId, { set, setOnInsert }) =>
       methods.upsertBalanceFields(userId, set ?? {}, setOnInsert ?? {}),

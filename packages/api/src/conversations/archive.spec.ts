@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
-import { createArchiveAllHandler } from './archive';
+import { createArchiveAllHandler, createSemindHistoryPolicy } from './archive';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -68,5 +68,59 @@ describe('createArchiveAllHandler', () => {
     expect(logger.error).toHaveBeenCalledWith('Error archiving all conversations', error);
     expect(res.statusCode).toBe(500);
     expect(res.body).toBe('Error archiving all conversations');
+  });
+});
+
+describe('SE-mind permanent history', () => {
+  function setup(path = '/') {
+    const req = {
+      user: { id: 'owner-a' },
+      path,
+      body: { arg: { conversationId: 'owned-chat' } },
+      config: { config: { semind: { enabled: true } } },
+    } as unknown as ServerRequest;
+    const res = mockResponse();
+    const deps = {
+      archiveAllConvos: jest.fn().mockResolvedValue({ archivedCount: 2 }),
+      saveConvo: jest.fn().mockResolvedValue({ conversationId: 'owned-chat', isArchived: true }),
+    };
+    const next = jest.fn();
+    return { req, res, deps, next, middleware: createSemindHistoryPolicy(deps) };
+  }
+
+  it('archives only the authenticated owner without calling permanent deletion', async () => {
+    const s = setup();
+    await s.middleware(s.req, s.res, s.next);
+    expect(s.deps.saveConvo).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'owner-a' }),
+      { conversationId: 'owned-chat', isArchived: true },
+      { noUpsert: true, preserveUpdatedAt: true },
+    );
+    expect(s.next).not.toHaveBeenCalled();
+    expect(s.res.statusCode).toBe(200);
+  });
+
+  it('archives all for the authenticated owner', async () => {
+    const s = setup('/all');
+    await s.middleware(s.req, s.res, s.next);
+    expect(s.deps.archiveAllConvos).toHaveBeenCalledWith('owner-a');
+    expect(s.deps.saveConvo).not.toHaveBeenCalled();
+    expect(s.next).not.toHaveBeenCalled();
+  });
+
+  it('does not create a history row or report success for a foreign id', async () => {
+    const s = setup();
+    s.deps.saveConvo.mockResolvedValue(null);
+    await s.middleware(s.req, s.res, s.next);
+    expect(s.res.statusCode).toBe(404);
+    expect(s.next).not.toHaveBeenCalled();
+  });
+
+  it('fails closed if persistence cannot confirm archival', async () => {
+    const s = setup();
+    s.deps.saveConvo.mockResolvedValue({ message: 'Database unavailable' });
+    await s.middleware(s.req, s.res, s.next);
+    expect(s.res.statusCode).toBe(503);
+    expect(s.next).not.toHaveBeenCalled();
   });
 });

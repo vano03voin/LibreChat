@@ -2350,6 +2350,7 @@ describe('refreshController – LibreChat path', () => {
       res,
       { expiration: expect.any(Date) },
       req,
+      await getUserById.mock.results[0].value,
     );
     expect(sentPayload).toEqual({
       token: 'local-app-token',
@@ -2378,7 +2379,14 @@ describe('refreshController – LibreChat path', () => {
 
     const sentPayload = res.send.mock.calls[0][0];
     expect(findSession).not.toHaveBeenCalled();
-    expect(setAuthTokens).toHaveBeenCalledWith('local-user-id', res, null, req);
+    expect(getUserById).toHaveBeenCalledTimes(1);
+    expect(setAuthTokens).toHaveBeenCalledWith(
+      'local-user-id',
+      res,
+      null,
+      req,
+      await getUserById.mock.results[0].value,
+    );
     expect(sentPayload).toEqual({
       token: 'local-app-token',
       user: {
@@ -2386,6 +2394,60 @@ describe('refreshController – LibreChat path', () => {
         email: 'local@example.com',
       },
     });
+  });
+});
+
+describe('local refresh admission regression', () => {
+  const refreshSecret = 'local-refresh-admission-test';
+  let originalSecret;
+  let originalNodeEnv;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    originalSecret = process.env.JWT_REFRESH_SECRET;
+    originalNodeEnv = process.env.NODE_ENV;
+    process.env.JWT_REFRESH_SECRET = refreshSecret;
+    process.env.NODE_ENV = 'test';
+    getUserById.mockResolvedValue({ _id: 'local-user-id', email: 'local@example.com' });
+  });
+
+  afterEach(() => {
+    if (originalSecret === undefined) delete process.env.JWT_REFRESH_SECRET;
+    else process.env.JWT_REFRESH_SECRET = originalSecret;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  function setup() {
+    const refreshToken = jwt.sign({ id: 'local-user-id' }, refreshSecret, { expiresIn: '1h' });
+    const req = { headers: { cookie: `refreshToken=${refreshToken}` }, query: {}, session: {} };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn().mockReturnThis(),
+      redirect: jest.fn(),
+    };
+    return { req, res };
+  }
+
+  it.each([null, { expiration: new Date(0) }])(
+    'never issues tokens when the session is missing or expired: %j',
+    async (session) => {
+      const { req, res } = setup();
+      findSession.mockResolvedValueOnce(session);
+      await refreshController(req, res);
+      expect(setAuthTokens).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    },
+  );
+
+  it('does not issue tokens after the account has been deleted', async () => {
+    const { req, res } = setup();
+    getUserById.mockResolvedValueOnce(null);
+    await refreshController(req, res);
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(findSession).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.redirect).toHaveBeenCalledWith('/login');
   });
 });
 

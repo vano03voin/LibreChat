@@ -1,4 +1,5 @@
 {
+  "com_auth_login_via_semind": "Войти через SE-mind",
   "chat_direction_left_to_right": "Слева направо",
   "chat_direction_right_to_left": "Справа налево",
   "com_a11y_ai_composing": "ИИ продолжает составлять ответ",
@@ -1300,5 +1301,15 @@
   "com_ui_zoom_in": "Увеличить",
   "com_ui_zoom_level": "Масштаб",
   "com_ui_zoom_out": "Уменьшить",
-  "com_user_message": "Вы"
+  "com_user_message": "Вы",
+  "com_ui_schedule_execution_scope": "Доступ задачи",
+  "com_ui_schedule_scope_profile": "Личный профиль",
+  "com_ui_schedule_scope_game": "Текущий игровой мир",
+  "com_ui_schedule_scope_hint": "Игровые задачи используют ваши текущие права, работают без входа в игру и приостанавливаются при смене мира. Результаты появляются в личных чатах на сайте.",
+  "com_agents_use_in_game": "Использовать в игре",
+  "com_agents_selected_for_game": "Выбран для игры",
+  "com_agents_use_default_in_game": "Использовать стандартного помощника",
+  "com_agents_game_selection_hint": "Выбор применяется к новым игровым чатам. Текущий чат сохраняет своего агента.",
+  "com_agents_game_selection_failed": "Не удалось сохранить выбор агента.",
+  "com_ui_schedule_disabled_world_changed": "Мир изменился. Привяжите задачу к текущему миру перед повторным запуском."
 }

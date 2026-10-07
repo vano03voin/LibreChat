@@ -41,6 +41,14 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       required: true,
       maxlength: 32000,
     },
+    executionScope: { type: String, enum: ['profile', 'game'], default: 'profile' },
+    semindContext: {
+      type: new Schema(
+        { server_id: { type: String, required: true }, world_id: { type: String, required: true } },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     agent_id: {
       type: String,
       required: true,
@@ -125,6 +133,7 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
         'insufficient_balance',
         'project_deleted',
         'project_required',
+        'world_changed',
       ],
     },
     nextRunAt: {

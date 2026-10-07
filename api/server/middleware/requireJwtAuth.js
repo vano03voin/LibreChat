@@ -1,5 +1,6 @@
 const cookies = require('cookie');
 const passport = require('passport');
+const { guard: requireSemindParent } = require('~/server/services/semind');
 const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
@@ -189,7 +190,7 @@ const requireJwtAuth = (req, res, next) => {
         if (tenantErr) {
           return next(tenantErr);
         }
-        refreshCloudFrontCookies(req, res, next);
+        requireSemindParent(req, res, () => refreshCloudFrontCookies(req, res, next));
       });
     })(req, res, next);
   };

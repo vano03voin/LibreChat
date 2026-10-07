@@ -25,6 +25,7 @@ const {
   normalizeExpiresIn,
   createOpenIDSessionIdentity,
   resolveAppConfigForUser,
+  resolveAuthTokenUser,
 } = require('@librechat/api');
 const {
   findUser,
@@ -606,6 +607,7 @@ const resetPassword = async (userId, token, password) => {
 /**
  * Reads the previously issued CloudFront cookie scope used for stale cookie cleanup.
  * @param {ServerRequest | null} [req=null]
+ * @param {IUser} [loadedUser] Fresh user queried by this auth operation, never request-body data.
  * @returns {import('@librechat/api').CloudFrontCookieScope | null}
  */
 const getPreviousCloudFrontScope = (req) =>
@@ -697,8 +699,9 @@ const setCloudFrontAuthCookies = (req, res, user, options = {}) => {
  * @param {ServerRequest | null} [req=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, _session = null, req = null) => {
+const setAuthTokens = async (userId, res, _session = null, req = null, loadedUser = undefined) => {
   try {
+    const user = await resolveAuthTokenUser(userId, getUserById, loadedUser);
     let session = _session;
     let refreshToken;
     let refreshTokenExpires;
@@ -714,7 +717,6 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
       refreshTokenExpires = session.expiration.getTime();
     }
 
-    const user = await getUserById(userId);
     const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
     const token = await generateToken(user, sessionExpiry);
 

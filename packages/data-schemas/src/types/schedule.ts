@@ -13,6 +13,8 @@ export interface ISchedule {
   tenantId?: string;
   name: string;
   prompt: string;
+  executionScope?: 'profile' | 'game';
+  semindContext?: { server_id: string; world_id: string };
   agent_id: string;
   cadence: TScheduleCadence;
   timezone: string;

@@ -67,6 +67,7 @@ const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = 
   insufficient_balance: 'com_ui_schedule_disabled_insufficient_balance',
   project_deleted: 'com_ui_schedule_disabled_project_deleted',
   project_required: 'com_ui_schedule_disabled_project_required',
+  world_changed: 'com_ui_schedule_disabled_world_changed',
 };
 
 export default function ScheduleCard({ schedule, projectName }: ScheduleCardProps) {

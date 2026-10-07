@@ -114,6 +114,14 @@ function Login() {
   return (
     <>
       {error != null && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
+      {startupConfig?.semindLoginURL && (
+        <a
+          href={startupConfig.semindLoginURL}
+          className="my-4 inline-flex min-h-12 w-full items-center justify-center rounded-lg bg-surface-submit px-4 py-3 font-medium text-text-submit transition-colors hover:bg-surface-submit-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary"
+        >
+          {localize('com_auth_login_via_semind')}
+        </a>
+      )}
       {startupConfig?.emailLoginEnabled === true && (
         <LoginForm
           onSubmit={login}

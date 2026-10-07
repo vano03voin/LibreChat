@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <SteamDirectory Condition="'$(SteamDirectory)' == ''">D:/torch/test-server/DedicatedServer64</SteamDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Steamworks.NET"><HintPath>$(SteamDirectory)/Steamworks.NET.dll</HintPath></Reference>
+    <None Include="$(SteamDirectory)/steam_api64.dll" Link="steam_api64.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(SteamDirectory)/steamclient64.dll" Link="steamclient64.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

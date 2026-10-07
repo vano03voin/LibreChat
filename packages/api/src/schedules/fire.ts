@@ -91,6 +91,12 @@ function buildScheduleTriggerEnvelope(
       ...(triggerFiles.length > 0 && { files: triggerFiles }),
       metadata: {
         manual,
+        ...(schedule.semindContext && {
+          semindContext: {
+            server_id: schedule.semindContext.server_id,
+            world_id: schedule.semindContext.world_id,
+          },
+        }),
         ...(typeof schedule.configRevision === 'number' && {
           configRevision: schedule.configRevision,
         }),
@@ -293,6 +299,15 @@ export async function fireSchedule(
       await methods.disableSchedule(schedule.id, 'permission_revoked', claimToken);
       await advance();
       return { fired: false, skipped: 'permission_revoked' as const };
+    }
+    if (schedule.executionScope === 'game') {
+      if (!deps.validateSemindGame) throw new Error('semind_schedule_authority_not_configured');
+      const authorization = await deps.validateSemindGame(schedule, user);
+      if (authorization !== 'ok') {
+        await methods.disableSchedule(schedule.id, authorization, claimToken);
+        await advance();
+        return { fired: false, skipped: authorization };
+      }
     }
 
     // The owner-config generation this occurrence was CLAIMED under, stamped onto every

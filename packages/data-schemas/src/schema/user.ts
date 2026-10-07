@@ -61,6 +61,12 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       required: true,
       default: 'local',
     },
+    semindSteamId: {
+      type: String,
+      match: /^[0-9]{17}$/,
+      index: { unique: true, sparse: true },
+    },
+    semindGameAgentId: { type: String, default: null },
     role: {
       type: String,
       default: SystemRoles.USER,

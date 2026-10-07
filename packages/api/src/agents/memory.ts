@@ -36,6 +36,11 @@ import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messa
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { Response as ServerResponse } from 'express';
 import type { ServerRequest, RunLLMConfig } from '~/types';
+import {
+  hasSemindMemoryConsent,
+  semindMemoryPartition,
+  semindMemoryInstructions,
+} from '~/semind/memory';
 import { resolveConfigHeaders, createSafeUser, getSafeErrorMetadata } from '~/utils';
 import { contentFilterModelBoundBlockResponse } from '~/middleware/contentFilter';
 import { extractMemoryContent } from '~/protection/adapters/submissions';
@@ -382,7 +387,7 @@ export const memoryToolUsageGuard = `Only use the \`set_memory\` and \`delete_me
  * `validKeys` is surfaced in the key descriptions so the model is told the
  * allowed keys up front, matching the runtime `createMemoryTool` schema.
  */
-export function getMemoryToolDefinitions(validKeys?: string[]): LCTool[] {
+export function getMemoryToolDefinitions(validKeys?: string[], semind = false): LCTool[] {
   const hasValidKeys = Array.isArray(validKeys) && validKeys.length > 0;
   return [
     {
@@ -391,6 +396,15 @@ export function getMemoryToolDefinitions(validKeys?: string[]): LCTool[] {
       parameters: {
         type: 'object',
         properties: {
+          ...(semind
+            ? {
+                scope: {
+                  type: 'string',
+                  enum: ['profile', 'game'],
+                  description: semindMemoryInstructions,
+                },
+              }
+            : {}),
           key: {
             type: 'string',
             description: hasValidKeys
@@ -412,6 +426,15 @@ export function getMemoryToolDefinitions(validKeys?: string[]): LCTool[] {
       parameters: {
         type: 'object',
         properties: {
+          ...(semind
+            ? {
+                scope: {
+                  type: 'string',
+                  enum: ['profile', 'game'],
+                  description: semindMemoryInstructions,
+                },
+              }
+            : {}),
           key: {
             type: 'string',
             description: hasValidKeys
@@ -436,12 +459,14 @@ export function registerMemoryTools({
   toolRegistry,
   toolDefinitions,
   validKeys,
+  semind = false,
 }: {
   toolRegistry?: LCToolRegistry;
   toolDefinitions?: LCTool[];
   validKeys?: string[];
+  semind?: boolean;
 }): { toolDefinitions: LCTool[]; registered: string[]; toolNames: string[] } {
-  const memoryToolDefinitions = getMemoryToolDefinitions(validKeys);
+  const memoryToolDefinitions = getMemoryToolDefinitions(validKeys, semind);
   const toolNames = memoryToolDefinitions.map((def) => def.name);
   const inputDefinitions = toolDefinitions ?? [];
   const newDefs: LCTool[] = [];
@@ -532,6 +557,20 @@ export async function buildInlineMemoryContext({
     return '';
   }
   try {
+    if (req.config?.config?.semind?.enabled) {
+      if (String(userId) !== req.user?.id || (!req.semindIdentity && !req.user?.semindSteamId))
+        return '';
+      const partitions = req.semindIdentity?.world_id
+        ? [undefined, semindMemoryPartition(req.semindIdentity, 'game')]
+        : [undefined];
+      const [profile, game] = await Promise.all(
+        partitions.map((agentId) =>
+          getRequestMemories({ req, userId, agentId, getFormattedMemories }),
+        ),
+      );
+      if (profile.readFailed || game?.readFailed) return '';
+      return `${semindMemoryInstructions}\n\n# Personal profile:\n${profile.withKeys ?? ''}${game ? `\n\n# Current server and world:\n${game.withKeys ?? ''}` : ''}`;
+    }
     const memories = await getRequestMemories({
       req,
       userId,
@@ -658,6 +697,86 @@ export async function buildInlineMemoryTool({
   const memoryConfig = req?.config?.memory;
   const validKeys = memoryConfig?.validKeys as string[] | undefined;
   const memoryAgentId = getMemoryAgentId(agent);
+
+  if (req.config?.config?.semind?.enabled) {
+    const identity = req.semindIdentity;
+    const action = toolName === DELETE_MEMORY_TOOL_NAME ? 'delete' : 'set';
+    if (
+      String(userId) !== req.user?.id ||
+      (!identity && !req.user?.semindSteamId) ||
+      !hasSemindMemoryConsent(req.semindUserText ?? '', action)
+    )
+      return null;
+    const allowed = await isMemoryToolAllowed({
+      req,
+      writePermissions:
+        action === 'delete' ? [Permissions.UPDATE] : [Permissions.CREATE, Permissions.UPDATE],
+      getRoleByName,
+    });
+    if (!allowed) return null;
+    const scopeTools = new Map<string, Promise<DynamicStructuredTool | null>>();
+    return tool(
+      async ({ scope, key, value }) => {
+        if (scope === 'game' && !identity?.world_id)
+          return [
+            'Game memory requires the current authenticated world; nothing was saved.',
+            undefined,
+          ];
+        const agentId = semindMemoryPartition(identity, scope);
+        const partition = agentId ?? '';
+        let scoped = scopeTools.get(partition);
+        if (!scoped) {
+          scoped = (async () => {
+            const onWrite = () => invalidateRequestMemories(req, agentId);
+            if (action === 'delete') {
+              return createDeleteMemoryTool({
+                userId,
+                agentId,
+                deleteMemory: memoryMethods.deleteMemory,
+                validKeys,
+                onWrite,
+              });
+            }
+            const formatted = await getRequestMemories({
+              req,
+              userId,
+              agentId,
+              getFormattedMemories: memoryMethods.getFormattedMemories,
+            });
+            if (formatted.readFailed) return null;
+            return createMemoryTool({
+              userId,
+              agentId,
+              setMemory: memoryMethods.setMemory,
+              validKeys,
+              charLimit: memoryConfig?.charLimit,
+              tokenLimit: memoryConfig?.tokenLimit,
+              totalTokens: formatted.totalTokens,
+              tokenCountsByKey: formatted.tokenCountsByKey,
+              filters: req.config?.filters,
+              onWrite,
+            });
+          })();
+          scopeTools.set(partition, scoped);
+        }
+        const instance = await scoped;
+        if (!instance) return ['Memory is unavailable; nothing was saved.', undefined];
+        return action === 'delete'
+          ? instance.func({ key })
+          : instance.func({ key, value: value ?? '' });
+      },
+      {
+        name: toolName,
+        description: semindMemoryInstructions,
+        responseFormat: 'content_and_artifact',
+        schema: z.object({
+          scope: z.enum(['profile', 'game']).default(identity?.world_id ? 'game' : 'profile'),
+          key: z.string(),
+          value: z.string().optional(),
+        }),
+      },
+    );
+  }
 
   if (toolName === DELETE_MEMORY_TOOL_NAME) {
     const allowed = await isMemoryToolAllowed({

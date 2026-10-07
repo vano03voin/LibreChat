@@ -11,6 +11,8 @@ const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
+const semindAuthority = require('./services/semind');
+const { setAuthTokens: setSemindAuthTokens } = require('./services/AuthService');
 const mongoSanitize = require('express-mongo-sanitize');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -359,6 +361,11 @@ const startServer = async () => {
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
+  app.use('/internal/semind/game', require('./services/semindGame'));
+  app.post('/auth/semind/sso', semindAuthority.createExchangeHandler({
+    provisionUser: require('./services/semindDefaultAgent').provision,
+    setAuthTokens: setSemindAuthTokens,
+  }));
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());

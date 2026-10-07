@@ -23,6 +23,8 @@ export interface IUser extends Document {
   password?: string;
   avatar?: string;
   provider: string;
+  semindSteamId?: string;
+  semindGameAgentId?: string | null;
   role?: string;
   googleId?: string;
   facebookId?: string;

@@ -2512,6 +2512,8 @@ export type EndpointsDropParamsMap = Record<string, string[] | Record<string, st
 
 export type TStartupConfig = {
   appTitle: string;
+  /** Explicit trusted SE-mind portal entry; only published when integration is enabled. */
+  semindLoginURL?: string;
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
@@ -3123,6 +3125,17 @@ export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 export const permissionWriteAttemptsSchema = z.number().int().min(1).max(100).default(3);
 
 export const configSchema = z.object({
+  semind: z
+    .object({
+      enabled: z.boolean().default(false),
+      apiURL: z.string().url(),
+      portalURL: z.string().url().optional(),
+      sessionRecheckSeconds: z.number().int().min(5).max(300).default(30),
+      libraryImportTimeoutSeconds: z.number().int().min(30).max(600).default(240),
+      /** Native host instance IDs and platform database server IDs identify different entities. */
+      gameServerIds: z.record(z.string().uuid()).default({}),
+    })
+    .optional(),
   version: z.string(),
   permissions: z.object({ maxWriteAttempts: permissionWriteAttemptsSchema }).optional(),
   cache: z.boolean().default(true),

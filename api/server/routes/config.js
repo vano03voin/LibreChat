@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   isEnabled,
+  publicSemindStartup,
   isLangfuseConnectionAvailable,
   isLangfuseFanoutEnabled,
   getBalanceConfig,
@@ -224,6 +225,7 @@ router.get('/', async function (req, res) {
       const payload = {
         ...preLoginPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
+        ...publicSemindStartup(baseConfig?.config?.semind),
         turnstile: baseConfig?.turnstileConfig,
         ...(rum ? { rum } : {}),
       };
@@ -296,6 +298,7 @@ router.get('/', async function (req, res) {
       ...buildPostLoginPayload(),
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
+      ...publicSemindStartup(appConfig?.config?.semind),
       interface: appConfig?.interfaceConfig,
       titleGenerationTiming: resolveTitleTiming({
         appConfig,

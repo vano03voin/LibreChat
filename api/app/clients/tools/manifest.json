@@ -1,5 +1,26 @@
 [
   {
+    "name": "Workshop scripts",
+    "pluginKey": "script_library",
+    "description": "Keep original Steam Workshop scripts and private immutable versions; check and run them in game.",
+    "agentsOnly": true,
+    "authConfig": []
+  },
+  {
+    "name": "Space Engineers",
+    "pluginKey": "game_execute",
+    "description": "Read and control your accessible game objects using your current identity.",
+    "agentsOnly": true,
+    "authConfig": []
+  },
+  {
+    "name": "Scheduled Tasks",
+    "pluginKey": "semind_schedule",
+    "description": "Create, inspect, edit, pause, and delete your own recurring tasks. Game tasks are tied to the current server and world.",
+    "agentsOnly": true,
+    "authConfig": []
+  },
+  {
     "name": "Traversaal",
     "pluginKey": "traversaal_search",
     "description": "Traversaal is a robust search API tailored for LLM Agents. Get an API key here: https://api.traversaal.ai",

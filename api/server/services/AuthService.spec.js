@@ -60,6 +60,8 @@ jest.mock(
           : undefined;
       },
       resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+      resolveAuthTokenUser: jest.requireActual('../../../packages/api/src/auth/tokenUser')
+        .resolveAuthTokenUser,
       createOpenIDSessionIdentity: jest.fn(
         ({ user, userId, openidSubject, tenantId, openidIssuer }) => {
           const normalize = (value) => {
@@ -1616,6 +1618,29 @@ describe('CloudFront cookie integration', () => {
       const result = await setAuthTokens('user-123', res);
 
       expect(result).toBe('mock-access-token');
+    });
+
+    it('uses the validated refresh user without repeating its database lookup', async () => {
+      const res = mockResponse();
+      const freshUser = { _id: 'user-123', tenantId: 'tenantA' };
+      const result = await setAuthTokens('user-123', res, null, mockRequest(), freshUser);
+
+      expect(result).toBe('mock-access-token');
+      expect(getUserById).not.toHaveBeenCalled();
+      expect(generateToken).toHaveBeenCalledWith(freshUser, 900000);
+    });
+
+    it('rejects a mismatched refresh user before session or token issuance', async () => {
+      const res = mockResponse();
+      await expect(
+        setAuthTokens('user-123', res, null, mockRequest(), { _id: 'foreign-user' }),
+      ).rejects.toThrow('AUTH_TOKEN_USER_MISMATCH');
+
+      expect(getUserById).not.toHaveBeenCalled();
+      expect(createSession).not.toHaveBeenCalled();
+      expect(generateRefreshToken).not.toHaveBeenCalled();
+      expect(generateToken).not.toHaveBeenCalled();
+      expect(res.cookie).not.toHaveBeenCalled();
     });
   });
 });

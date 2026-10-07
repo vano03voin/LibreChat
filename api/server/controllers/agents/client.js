@@ -3,6 +3,7 @@ const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/da
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
+  closeSemindPlatformSession,
   isEnabled,
   checkAccess,
   buildRunToolSet,
@@ -5193,6 +5194,10 @@ class AgentClient extends BaseClient {
       /** An aborted/erroring run can still have completed compaction before
        * the failure; retain that model-visible state for actor reconciliation. */
       await this.options.runFiles?.close();
+      await closeSemindPlatformSession(
+        this.options.req,
+        abortController?.signal?.aborted === true,
+      ).catch(() => logger.warn('[SE-mind] Game session cleanup could not be confirmed'));
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the
@@ -5873,6 +5878,10 @@ class AgentClient extends BaseClient {
       }
     } finally {
       await this.options.runFiles?.close();
+      await closeSemindPlatformSession(
+        this.options.req,
+        abortController?.signal?.aborted === true,
+      ).catch(() => logger.warn('[SE-mind] Game session cleanup could not be confirmed'));
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the

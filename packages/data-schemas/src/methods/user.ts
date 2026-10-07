@@ -2,10 +2,14 @@ import mongoose, { FilterQuery } from 'mongoose';
 import {
   AUTH_USER_DOC_BY_ID_PREFIX,
   CacheKeys,
+  PermissionBits,
+  PrincipalType,
+  ResourceType,
   type RefillIntervalUnit,
   type StatefulCodeEnvironment,
 } from 'librechat-data-provider';
-import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import type { IUser, IAgent, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import type { createAclEntryMethods } from './aclEntry';
 import type { CacheStore } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
@@ -19,6 +23,7 @@ const MAX_SUBAGENT_ADMISSION_FENCES = 32;
 
 interface UserMethodDeps {
   getCache?: (key: string) => CacheStore | undefined;
+  grantPermission?: ReturnType<typeof createAclEntryMethods>['grantPermission'];
 }
 
 function isAuthUserDocCacheEnabled(): boolean {
@@ -47,6 +52,17 @@ export function createUserMethods(
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
   updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  provisionSemindUser: (identity: {
+    steamId: string;
+    name: string;
+    isOperator: boolean;
+  }) => Promise<{ id: string; steamId: string }>;
+  getSemindAgentSelection: (userId: string) => Promise<string | null>;
+  setSemindAgentSelection: (userId: string, agentId: string | null) => Promise<boolean>;
+  ensureSemindDefaultAgent: (
+    userId: string,
+    options: { instructions: string; provider: string; model: string },
+  ) => Promise<string>;
   claimSamlIdentity: (
     userId: string,
     samlId: string,
@@ -300,6 +316,135 @@ export function createUserMethods(
     }).lean<IUser>();
     await invalidateAuthUserDocCache(userId);
     return updated;
+  }
+
+  /** Identity is supplied only by the trusted SE-mind backend, never by email matching. */
+  async function provisionSemindUser(identity: {
+    steamId: string;
+    name: string;
+    isOperator: boolean;
+  }): Promise<{ id: string; steamId: string }> {
+    if (!/^[0-9]{17}$/.test(identity.steamId)) {
+      throw new TypeError('Invalid Steam identity');
+    }
+    const User = mongoose.models.User;
+    const update = {
+      $set: {
+        name: identity.name.slice(0, 200),
+        role: 'USER',
+      },
+      $setOnInsert: {
+        semindSteamId: identity.steamId,
+        provider: 'semind',
+        email: `steam-${identity.steamId}@accounts.se-mind.invalid`,
+        emailVerified: true,
+      },
+    };
+    let user: IUser | null;
+    try {
+      user = await User.findOneAndUpdate(
+        { semindSteamId: identity.steamId, provider: 'semind' },
+        update,
+        { upsert: true, new: true, runValidators: true },
+      ).lean<IUser>();
+    } catch (error) {
+      if (!(error instanceof mongoose.mongo.MongoServerError) || error.code !== 11000) throw error;
+      // Another first game/web login may have won the unique Steam identity insertion.
+      user = await User.findOneAndUpdate(
+        { semindSteamId: identity.steamId, provider: 'semind' },
+        { $set: update.$set },
+        { new: true, runValidators: true },
+      ).lean<IUser>();
+    }
+    if (!user) throw new Error('SE-mind identity provisioning failed');
+    const id = user._id.toString();
+    await invalidateAuthUserDocCache(id);
+    return { id, steamId: identity.steamId };
+  }
+
+  /** Current explicit choice is valid only while the agent is still owned. */
+  async function getSemindAgentSelection(userId: string): Promise<string | null> {
+    const user = await mongoose.models.User.findById(userId)
+      .select('semindGameAgentId')
+      .lean<IUser>();
+    if (!user?.semindGameAgentId) return null;
+    const owned = await mongoose.models.Agent.exists({
+      id: user.semindGameAgentId,
+      author: userId,
+    });
+    return owned ? user.semindGameAgentId : null;
+  }
+
+  async function setSemindAgentSelection(userId: string, agentId: string | null): Promise<boolean> {
+    if (agentId !== null && !(await mongoose.models.Agent.exists({ id: agentId, author: userId })))
+      return false;
+    const result = await mongoose.models.User.updateOne(
+      { _id: userId },
+      { $set: { semindGameAgentId: agentId } },
+    );
+    if (!result.matchedCount) return false;
+    await invalidateAuthUserDocCache(userId);
+    return true;
+  }
+
+  async function ensureSemindDefaultAgent(
+    userId: string,
+    options: { instructions: string; provider: string; model: string },
+  ): Promise<string> {
+    const user = await mongoose.models.User.findById(userId)
+      .select('name semindSteamId provider')
+      .lean<IUser>();
+    if (!user?.semindSteamId || user.provider !== 'semind' || !deps.grantPermission)
+      throw new Error('semind_default_agent_owner_required');
+    const id = `agent_semind_${userId}`;
+    const initial = {
+      id,
+      author: userId,
+      authorName: user.name,
+      name: 'Space Engineers',
+      description: 'Личный помощник Space Engineers',
+      provider: options.provider,
+      model: options.model,
+      instructions: options.instructions,
+      tools: [
+        'game_execute',
+        'script_library',
+        'semind_schedule',
+        'memory',
+        'execute_code',
+        'web_search',
+      ],
+      model_parameters: { useResponsesApi: true, reasoning_effort: 'low' },
+      memory_scope: 'user',
+    };
+    const Agent = mongoose.models.Agent as mongoose.Model<IAgent>;
+    let agent: IAgent | null;
+    try {
+      agent = await Agent.findOneAndUpdate(
+        { id, author: userId },
+        {
+          $setOnInsert: {
+            ...initial,
+            versions: [{ ...initial, createdAt: new Date(), updatedAt: new Date() }],
+          },
+        },
+        { upsert: true, new: true, runValidators: true },
+      ).lean<IAgent>();
+    } catch (error) {
+      if (!(error instanceof mongoose.mongo.MongoServerError) || error.code !== 11000) throw error;
+      agent = await Agent.findOne({ id, author: userId }).lean<IAgent>();
+    }
+    if (!agent) throw new Error('semind_default_agent_unavailable');
+    const grant = await deps.grantPermission(
+      PrincipalType.USER,
+      userId,
+      ResourceType.AGENT,
+      agent._id,
+      PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      userId,
+    );
+    if (!grant) throw new Error('semind_default_agent_permissions_unavailable');
+    return id;
   }
 
   /** Atomically updates a SAML user only when the incoming identity can claim the document. */
@@ -831,6 +976,10 @@ export function createUserMethods(
     countUsers,
     createUser,
     updateUser,
+    provisionSemindUser,
+    getSemindAgentSelection,
+    setSemindAgentSelection,
+    ensureSemindDefaultAgent,
     claimSamlIdentity,
     acceptTerms,
     searchUsers,

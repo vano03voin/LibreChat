@@ -11,6 +11,7 @@ const {
   openCheckpointDeletion,
   waitForGenerationPersistence,
   createArchiveAllHandler,
+  createSemindHistoryPolicy,
   createSubagentActivityStreamHandler,
   createSubagentControlHandler,
   isValidSubagentControlRequest,
@@ -65,6 +66,10 @@ const assistantClients = {
 
 const router = express.Router();
 const archiveAllHandler = createArchiveAllHandler({ archiveAllConvos: db.archiveAllConvos });
+const semindHistoryPolicy = createSemindHistoryPolicy({
+  archiveAllConvos: db.archiveAllConvos,
+  saveConvo: db.saveConvo,
+});
 const subagentThreadViewHandler = createSubagentThreadViewHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
@@ -448,7 +453,7 @@ async function deleteOwnerConversationPersistence(userId, filter, tenantId, chec
   return { ...result, conversationIds: targets };
 }
 
-router.delete('/', configMiddleware, async (req, res) => {
+router.delete('/', configMiddleware, semindHistoryPolicy, async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
 
@@ -584,7 +589,7 @@ router.delete('/', configMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/all', configMiddleware, async (req, res) => {
+router.delete('/all', configMiddleware, semindHistoryPolicy, async (req, res) => {
   try {
     const tenantId =
       typeof req.user.tenantId === 'string' && req.user.tenantId !== ''

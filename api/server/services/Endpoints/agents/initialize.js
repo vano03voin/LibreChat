@@ -1904,4 +1904,4 @@ function createInitializeClient(dependencies = {}) {
 
 const initializeClient = createInitializeClient();
 
-module.exports = { createInitializeClient, initializeClient };
+module.exports = { createInitializeClient, initializeClient, createToolLoader };

@@ -810,6 +810,120 @@ describe('memory token limit guidance', () => {
   });
 });
 
+describe('SE-mind memory tools', () => {
+  function setupSemindMemory(text = 'Запомни название моего корабля.') {
+    const req = {
+      config: {
+        config: { semind: { enabled: true } },
+        endpoints: { [EModelEndpoint.agents]: { capabilities: [AgentCapabilities.memory] } },
+        memory: { disabled: false, charLimit: 10000, tokenLimit: 10000 },
+      },
+      user: { id: 'owner-a', personalization: { memories: true } },
+      semindIdentity: { steam_id: '76561198000000001', server_id: 'server-a', world_id: 'world-a' },
+      semindUserText: text,
+    } as ServerRequest;
+    const methods = {
+      setMemory: jest.fn().mockResolvedValue({ ok: true }),
+      deleteMemory: jest.fn().mockResolvedValue({ ok: true }),
+      getFormattedMemories: jest
+        .fn()
+        .mockResolvedValue({ withKeys: '', withoutKeys: '', totalTokens: 0 }),
+    };
+    const create = (toolName = 'set_memory') =>
+      buildInlineMemoryTool({
+        toolName,
+        req,
+        agent: {
+          tools: [AgentCapabilities.memory],
+          memory_scope: MemoryScope.agent,
+          id: 'private-agent',
+        },
+        userId: 'owner-a',
+        memoryMethods: methods,
+        getRoleByName: jest.fn(),
+      });
+    return { req, methods, create };
+  }
+
+  it('rejects implicit writes and writes without a trusted identity', async () => {
+    const s = setupSemindMemory('Мой корабль называется Цербер.');
+    expect(await s.create()).toBeNull();
+    s.req.semindUserText = 'Запомни имя моего корабля.';
+    delete s.req.semindIdentity;
+    expect(await s.create()).toBeNull();
+    expect(s.methods.setMemory).not.toHaveBeenCalled();
+  });
+
+  it('profile schedules read and explicitly write only the personal pool without game authority', async () => {
+    const s = setupSemindMemory('Запомни: мой язык русский.');
+    delete s.req.semindIdentity;
+    s.req.user!.semindSteamId = '76561198000000001';
+    const instance = await s.create();
+    await instance?.invoke({ scope: 'profile', key: 'language', value: 'Русский' });
+    expect(s.methods.setMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'owner-a', agentId: undefined }),
+    );
+    s.methods.setMemory.mockClear();
+    await instance?.invoke({ scope: 'game', key: 'ship', value: 'Цербер' });
+    expect(s.methods.setMemory).not.toHaveBeenCalled();
+    s.methods.getFormattedMemories.mockClear();
+    await buildInlineMemoryContext({
+      agent: { tools: [AgentCapabilities.memory] },
+      req: s.req,
+      userId: 'owner-a',
+      memoryAvailable: true,
+      getFormattedMemories: s.methods.getFormattedMemories,
+    });
+    expect(
+      s.methods.getFormattedMemories.mock.calls.every(([scope]) => scope.agentId === undefined),
+    ).toBe(true);
+  });
+
+  it('binds game writes to current server/world and profile writes to the shared personal pool', async () => {
+    const s = setupSemindMemory();
+    const instance = await s.create();
+    expect(instance).not.toBeNull();
+    await instance?.invoke({ scope: 'game', key: 'ship_name', value: 'Цербер' });
+    expect(s.methods.setMemory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: 'owner-a', agentId: 'semind-world:server-a:world-a' }),
+    );
+    await instance?.invoke({ scope: 'profile', key: 'language', value: 'Русский' });
+    expect(s.methods.setMemory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: 'owner-a', agentId: undefined }),
+    );
+    expect(s.methods.setMemory.mock.calls.every(([args]) => args.agentId !== 'private-agent')).toBe(
+      true,
+    );
+  });
+
+  it('loads only profile and current-world context for every owned agent', async () => {
+    const s = setupSemindMemory();
+    await buildInlineMemoryContext({
+      agent: {
+        tools: [AgentCapabilities.memory],
+        id: 'private-agent',
+        memory_scope: MemoryScope.agent,
+      },
+      req: s.req,
+      userId: 'owner-a',
+      memoryAvailable: true,
+      getFormattedMemories: s.methods.getFormattedMemories,
+    });
+    expect(s.methods.getFormattedMemories.mock.calls).toEqual([
+      [{ userId: 'owner-a', agentId: undefined }],
+      [{ userId: 'owner-a', agentId: 'semind-world:server-a:world-a' }],
+    ]);
+  });
+
+  it('rejects a write if the existing partition cannot be read', async () => {
+    const s = setupSemindMemory();
+    s.methods.getFormattedMemories.mockResolvedValue({ readFailed: true });
+    const instance = await s.create();
+    await instance?.invoke({ scope: 'game', key: 'ship_name', value: 'Цербер' });
+    expect(s.methods.setMemory).not.toHaveBeenCalled();
+  });
+});
+
 describe('buildInlineMemoryTool content filtering', () => {
   it('keeps a legacy-only message filter scoped to ingress messages', async () => {
     const setMemory = jest.fn().mockResolvedValue({ ok: true });

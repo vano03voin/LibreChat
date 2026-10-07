@@ -25,6 +25,7 @@ import { resolveEndpointRuntime } from '~/types';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
+import { createOwnerModelFetch } from '~/semind/model';
 
 const { PROXY } = process.env;
 
@@ -338,7 +339,15 @@ export async function initializeCustom(
       modelOptions,
       ...clientOptions,
     };
-    options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
+    const semindModel = appConfig?.config?.semind?.enabled && endpoint.toLowerCase() === 'luna';
+    options = getOpenAIConfig(semindModel ? 'owner-grant' : apiKey, finalClientOptions, endpoint);
+    if (semindModel) {
+      options.configOptions ??= {};
+      options.configOptions.fetch = createOwnerModelFetch({
+        userId, steamId: user?.semindSteamId ?? '', signingKeyBase64: apiKey,
+        baseURL, fetch: globalThis.fetch,
+      });
+    }
     if (options != null) {
       options.useLegacyContent = true;
       options.endpointTokenConfig = endpointTokenConfig;

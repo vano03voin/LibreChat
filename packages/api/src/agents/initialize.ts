@@ -2118,6 +2118,7 @@ export async function initializeAgent(
       toolRegistry,
       toolDefinitions,
       validKeys: appConfig?.memory?.validKeys,
+      semind: appConfig?.config?.semind?.enabled === true,
     });
     toolDefinitions = memoryResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.memory, memoryResult.toolNames);

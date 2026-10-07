@@ -266,6 +266,23 @@ describe('buildFireClientRequestId', () => {
 });
 
 describe('fireSchedule', () => {
+  it('pauses a game task on world change before dispatch', async () => {
+    const { methods, calls } = makeMethods();
+    const enqueueTrigger = jest.fn();
+    const validateSemindGame = jest.fn().mockResolvedValue('world_changed');
+    const result = await fireSchedule(
+      makeDeps(methods, { enqueueTrigger, validateSemindGame }),
+      makeSchedule({
+        executionScope: 'game',
+        semindContext: { server_id: 'server', world_id: 'world' },
+      }),
+      LIMITS,
+      dueAt(),
+    );
+    expect(result).toMatchObject({ fired: false, skipped: 'world_changed' });
+    expect(calls.disable).toEqual(['world_changed']);
+    expect(enqueueTrigger).not.toHaveBeenCalled();
+  });
   it('preserves a claimed occurrence when the deployment switch turns off', async () => {
     const { methods } = makeMethods();
     const getLimits = jest.fn(async () => ({ ...LIMITS, enabled: false }));

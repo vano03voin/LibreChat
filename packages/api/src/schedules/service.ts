@@ -117,6 +117,7 @@ export type ScheduleResumeClaimResult =
  * directly.
  */
 export interface SchedulesServiceDeps {
+  validateSemindGame?: ScheduleEngineDeps['validateSemindGame'];
   preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods & {
     getRoleByName: (
@@ -145,7 +146,12 @@ export interface SchedulesServiceDeps {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig | undefined>;
   findUserById: (
     userId: string | Types.ObjectId,
-  ) => Promise<{ _id: Types.ObjectId; tenantId?: string; role?: string } | null>;
+  ) => Promise<{
+    _id: Types.ObjectId;
+    tenantId?: string;
+    role?: string;
+    semindSteamId?: string;
+  } | null>;
   /** Reads the balance record together with the credits unexpired in-flight reservations hold. */
   findBalance: (userId: string) => Promise<IBalance | null>;
   /**
@@ -469,6 +475,7 @@ export function createSchedulesService(
   }
 
   const engineDeps: ScheduleEngineDeps = {
+    validateSemindGame: deps.validateSemindGame,
     preflightMCP: deps.preflightMCP,
     methods,
     getLimits,
@@ -481,7 +488,12 @@ export function createSchedulesService(
       if (user == null) {
         return null;
       }
-      return { id: user._id.toString(), tenantId: user.tenantId, role: user.role };
+      return {
+        id: user._id.toString(),
+        tenantId: user.tenantId,
+        role: user.role,
+        semindSteamId: user.semindSteamId,
+      };
     },
     hasScheduleAccess: async (user) => {
       const role = await methods.getRoleByName(user.role);

@@ -31,6 +31,7 @@ export enum QueryKeys {
   assistant = 'assistant',
   agents = 'agents',
   agent = 'agent',
+  semindGameAgent = 'semindGameAgent',
   files = 'files',
   fileConfig = 'fileConfig',
   tools = 'tools',
@@ -112,6 +113,7 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  semindGameAgent = 'semindGameAgent',
   subagentControl = 'subagentControl',
   cancelBackgroundTasks = 'cancelBackgroundTasks',
   enqueueAgentQueuedTurn = 'enqueueAgentQueuedTurn',

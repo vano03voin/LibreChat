@@ -129,6 +129,7 @@ export function computeCreateDigest(payload: TCreateSchedule): string {
     timezone: payload.timezone,
     target: payload.target,
     enabled: payload.enabled,
+    executionScope: payload.executionScope,
     // A structured cadence keeps EXACTLY the shape it hashed under before cron
     // existed. Adding `expression: null` to it would change the canonical JSON, and
     // with it the digest, for every schedule already out there: a create that
@@ -235,6 +236,7 @@ export type WireSchedule = Pick<
   | 'cadence'
   | 'timezone'
   | 'target'
+  | 'executionScope'
   | 'chatProjectId'
   | 'file_ids'
   | 'enabled'
@@ -304,6 +306,7 @@ export function toWireSchedule(
     cadence: schedule.cadence,
     timezone: schedule.timezone,
     target: schedule.target,
+    executionScope: schedule.executionScope,
     chatProjectId: resolveScheduleProjectId(limits ?? {}, schedule.chatProjectId),
     file_ids: schedule.file_ids,
     enabled: schedule.enabled,
@@ -707,6 +710,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       await respondToReplay(replayed);
       return;
     }
+    if (parsed.data.executionScope === 'game' && !req.semindIdentity?.world_id) {
+      res.status(400).json({ code: 'SEMIND_SCHEDULE_WORLD_REQUIRED' });
+      return;
+    }
     const id = `sched_${randomUUID()}`;
     if (
       parsed.data.enabled &&
@@ -786,6 +793,14 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     const created = await deps.methods.createScheduleWithSlot(
       {
         ...parsed.data,
+        ...(parsed.data.executionScope === 'game' && req.semindIdentity?.world_id
+          ? {
+              semindContext: {
+                server_id: req.semindIdentity.server_id,
+                world_id: req.semindIdentity.world_id,
+              },
+            }
+          : {}),
         chatProjectId: chatProjectId ?? undefined,
         id,
         user: user.id as never,
@@ -1031,6 +1046,19 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // cadence one, or a name/prompt edit would silently leave it dead.
     const needsArming = existing.nextRunAt == null;
     const update: Partial<ISchedule> = { ...editedFields } as Partial<ISchedule>;
+    if (
+      parsed.data.executionScope === 'game' ||
+      (reEnabled && existing.executionScope === 'game' && parsed.data.executionScope !== 'profile')
+    ) {
+      if (!req.semindIdentity?.world_id) {
+        res.status(400).json({ code: 'SEMIND_SCHEDULE_WORLD_REQUIRED' });
+        return;
+      }
+      update.semindContext = {
+        server_id: req.semindIdentity.server_id,
+        world_id: req.semindIdentity.world_id,
+      };
+    }
     // `chatProjectId` is resolved, not copied: an operator pin rewrites it even when
     // this PATCH never mentioned the field, so the row converges on the policy
     // instead of drifting until the owner happens to touch the picker.
@@ -1054,11 +1082,13 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       update.failureCount = 0;
       update.balanceSkipCount = 0;
     }
+    const clearsGameContext = parsed.data.executionScope === 'profile';
     const unset =
-      reEnabled || clearsProject
+      reEnabled || clearsProject || clearsGameContext
         ? {
             ...(reEnabled && { disabledReason: 1 as const }),
             ...(clearsProject && { chatProjectId: 1 as const }),
+            ...(clearsGameContext && { semindContext: 1 as const }),
           }
         : undefined;
     // Retain the new attachments BEFORE committing the edit, so a retention failure

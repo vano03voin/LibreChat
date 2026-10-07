@@ -24,7 +24,8 @@ export type ScheduleDisabledReason =
   | 'permission_revoked'
   | 'insufficient_balance'
   | 'project_deleted'
-  | 'project_required';
+  | 'project_required'
+  | 'world_changed';
 
 export type ScheduleRunStatus =
   | 'started'
@@ -70,6 +71,7 @@ export const isCronCadence = (cadence: TScheduleCadence): cadence is TCronCadenc
   cadence.frequency === 'cron';
 
 export const createSchedulePayloadSchema = z.object({
+  executionScope: z.enum(['profile', 'game']).optional(),
   name: z.string().trim().min(1).max(256),
   prompt: z.string().trim().min(1).max(32000),
   agent_id: z.string().trim().min(1),
@@ -125,6 +127,7 @@ export type TScheduleLastRun = {
 };
 
 export type TSchedule = {
+  executionScope?: 'profile' | 'game';
   id: string;
   user: string;
   name: string;

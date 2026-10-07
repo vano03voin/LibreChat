@@ -42,7 +42,14 @@ const handlers = createSchedulesHandlers({
   // enforce the same role AGENTS:USE + resource VIEW (with manage:agents bypass)
   // the actual fire requires — otherwise a role without AGENTS:USE could schedule
   // runs the chat route rejects and walks toward auto-disable.
-  canViewAgent: async (agentId, req) => (await resolveAgentFireAccess(agentId, req.user)) === 'ok',
+  canViewAgent: async (agentId, req) => {
+    if (
+      req.config?.config?.semind?.enabled &&
+      !(await methods.getAgent({ id: agentId, author: req.user.id }))
+    )
+      return false;
+    return (await resolveAgentFireAccess(agentId, req.user)) === 'ok';
+  },
   // Same scoped lookup the fire-time precheck uses, so a destination this write
   // accepts is one the next fire also accepts.
   canUseProject: async (projectId, userId) =>
@@ -105,3 +112,4 @@ router.post(
 );
 
 module.exports = router;
+module.exports.handlers = handlers;

@@ -3,7 +3,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { createUserMethods, USER_DELETION_FENCE_STALE_MS } from './user';
+import { createAclEntryMethods } from './aclEntry';
+import aclEntrySchema from '~/schema/aclEntry';
 import balanceSchema from '~/schema/balance';
+import agentSchema from '~/schema/agent';
 import userSchema from '~/schema/user';
 
 /** Mocking crypto for generateToken */
@@ -42,6 +45,8 @@ beforeAll(async () => {
   /** Register models */
   User = mongoose.models.User || mongoose.model<t.IUser>('User', userSchema);
   Balance = mongoose.models.Balance || mongoose.model<t.IBalance>('Balance', balanceSchema);
+  mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+  mongoose.models.AclEntry || mongoose.model('AclEntry', aclEntrySchema);
 
   /** Initialize methods */
   methods = createUserMethods(mongoose);
@@ -103,6 +108,127 @@ describe('User schema indexes', () => {
         openidIssuer: 'https://issuer-a.example.com',
       }),
     ).rejects.toThrow(/duplicate key/);
+  });
+});
+
+describe('SE-mind Steam identities', () => {
+  test('default assistant is owned, stable across simultaneous logins, and preserves owner edits', async () => {
+    const owner = await methods.provisionSemindUser({
+      steamId: '76561198000000001',
+      name: 'One',
+      isOperator: false,
+    });
+    const ownerMethods = createUserMethods(mongoose, {
+      grantPermission: createAclEntryMethods(mongoose).grantPermission,
+    });
+    const Agent = mongoose.models.Agent as mongoose.Model<t.IAgent>;
+    await Agent.syncIndexes();
+    const options = {
+      instructions: 'Prepared game instructions',
+      provider: 'Luna',
+      model: 'gpt-6-luna',
+    };
+    const ids = await Promise.all(
+      Array.from({ length: 6 }, () => ownerMethods.ensureSemindDefaultAgent(owner.id, options)),
+    );
+    expect(new Set(ids).size).toBe(1);
+    expect(await Agent.countDocuments()).toBe(1);
+    const agent = await Agent.findOne({ id: ids[0] }).lean<t.IAgent>();
+    if (!agent) throw new Error('default assistant missing');
+    expect(String(agent.author)).toBe(owner.id);
+    expect(agent.tools).toEqual(
+      expect.arrayContaining(['game_execute', 'script_library', 'semind_schedule']),
+    );
+    expect(
+      await mongoose.models.AclEntry.countDocuments({
+        principalId: new mongoose.Types.ObjectId(owner.id),
+        resourceId: agent._id,
+      }),
+    ).toBe(1);
+    await Agent.updateOne({ id: ids[0] }, { $set: { instructions: 'Owner changed instructions' } });
+    await ownerMethods.ensureSemindDefaultAgent(owner.id, options);
+    expect((await Agent.findOne({ id: ids[0] }))?.instructions).toBe('Owner changed instructions');
+  });
+  test('game agent selection is owner-only and falls back after deletion', async () => {
+    const owner = await methods.provisionSemindUser({
+      steamId: '76561198000000001',
+      name: 'One',
+      isOperator: false,
+    });
+    const other = await methods.provisionSemindUser({
+      steamId: '76561198000000002',
+      name: 'Two',
+      isOperator: false,
+    });
+    const Agent = mongoose.models.Agent;
+    await Agent.create({
+      id: 'agent-owned',
+      author: owner.id,
+      provider: 'Luna',
+      model: 'gpt-6-luna',
+    });
+    expect(await methods.getSemindAgentSelection(owner.id)).toBeNull();
+    expect(await methods.setSemindAgentSelection(other.id, 'agent-owned')).toBe(false);
+    expect(await methods.setSemindAgentSelection(owner.id, 'agent-owned')).toBe(true);
+    expect(await methods.getSemindAgentSelection(owner.id)).toBe('agent-owned');
+    expect(await methods.getSemindAgentSelection(other.id)).toBeNull();
+    await Agent.deleteOne({ id: 'agent-owned' });
+    expect(await methods.getSemindAgentSelection(owner.id)).toBeNull();
+    expect(await methods.setSemindAgentSelection(owner.id, null)).toBe(true);
+  });
+  test('concurrent web and game provisioning creates one ordinary account', async () => {
+    await User.syncIndexes();
+    const identity = { steamId: '76561198000000001', name: 'Pilot', isOperator: false };
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => methods.provisionSemindUser(identity)),
+    );
+    expect(new Set(results.map((result) => result.id)).size).toBe(1);
+    expect(await User.countDocuments()).toBe(1);
+    expect((await User.findById(results[0].id))?.role).toBe('USER');
+  });
+
+  test('does not claim an existing account by synthetic email', async () => {
+    await User.syncIndexes();
+    const existing = await User.create({
+      email: 'steam-76561198000000001@accounts.se-mind.invalid',
+      provider: 'local',
+      name: 'Unrelated',
+    });
+    await expect(
+      methods.provisionSemindUser({
+        steamId: '76561198000000001',
+        name: 'Pilot',
+        isOperator: false,
+      }),
+    ).rejects.toThrow('SE-mind identity provisioning failed');
+    expect(await User.countDocuments()).toBe(1);
+    expect((await User.findById(existing._id))?.provider).toBe('local');
+  });
+
+  test('operator rights follow explicit current identity and Steam accounts remain separate', async () => {
+    await User.syncIndexes();
+    const first = await methods.provisionSemindUser({
+      steamId: '76561198000000001',
+      name: 'One',
+      isOperator: true,
+    });
+    const second = await methods.provisionSemindUser({
+      steamId: '76561198000000002',
+      name: 'Two',
+      isOperator: false,
+    });
+    expect(first.id).not.toBe(second.id);
+    expect((await User.findById(first.id))?.role).toBe('USER');
+    await User.updateOne({ _id: first.id }, { $set: { role: 'ADMIN' } });
+    await methods.provisionSemindUser({
+      steamId: '76561198000000001',
+      name: 'One',
+      isOperator: false,
+    });
+    expect((await User.findById(first.id))?.role).toBe('USER');
+    await expect(
+      methods.provisionSemindUser({ steamId: 'invalid', name: 'X', isOperator: true }),
+    ).rejects.toThrow(TypeError);
   });
 });
 

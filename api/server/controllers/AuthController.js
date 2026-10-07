@@ -627,7 +627,7 @@ const refreshController = async (req, res) => {
     const userId = payload.id;
 
     if (process.env.NODE_ENV === 'CI') {
-      const token = await setAuthTokens(userId, res, null, req);
+      const token = await setAuthTokens(userId, res, null, req, user);
       return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     }
 
@@ -641,7 +641,7 @@ const refreshController = async (req, res) => {
     );
 
     if (session && session.expiration > new Date()) {
-      const token = await setAuthTokens(userId, res, session, req);
+      const token = await setAuthTokens(userId, res, session, req, user);
 
       res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     } else if (req?.query?.retry) {
