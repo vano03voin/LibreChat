@@ -277,6 +277,8 @@ export default [
             'spinner',
             'popover-ui',
             'select-item',
+            'reset-rc-number-input',
+            'reset-rc-number-input-text-right',
             'assistant-item',
             'animated-tab',
             'animated-tab-list',
